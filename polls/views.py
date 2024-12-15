@@ -1,33 +1,44 @@
 from django.db.models import F
-from django.http import HttpResponseRedirect
+from django.http import HttpResponseRedirect, Http404
 from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 from django.views import generic
+from django.utils import timezone
 
 from .models import Question
 
 
-class IndexView(generic.ListView):
+class FutureQuestionsFilterMixin:
+    def get_queryset(self):
+        """
+        Excludes any questions that aren't published yet.
+        """
+        return Question.objects.filter(pub_date__lte=timezone.now())
+
+
+class IndexView(FutureQuestionsFilterMixin, generic.ListView):
     template_name = "polls/index.html"
     context_object_name = "latest_question_list"
 
     def get_queryset(self):
         """Return the last five published questions."""
-        return Question.objects.order_by("-pub_date")[:5]
+        return super().get_queryset().order_by("-pub_date")[:5]
 
 
-class DetailView(generic.DetailView):
+class DetailView(FutureQuestionsFilterMixin, generic.DetailView):
     model = Question
     template_name = "polls/detail.html"
 
 
-class ResultsView(generic.DetailView):
+class ResultsView(FutureQuestionsFilterMixin, generic.DetailView):
     model = Question
     template_name = "polls/results.html"
 
 
-def vote(request, question_id):
-    question = get_object_or_404(Question, pk=question_id)
+def vote(request, pk):
+    question = get_object_or_404(Question, pk=pk)
+    if question.pub_date > timezone.now():
+        raise Http404
     if not request.POST.get("choice", None):
         # Redisplay the question voting form.
         return render(
